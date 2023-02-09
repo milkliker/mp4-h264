@@ -5,3 +5,4 @@ node_modules
 src/mp4-encoder/embuild/
 test/sequence
 test/outputs/*.mp4
+.vscode

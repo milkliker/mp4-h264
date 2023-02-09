@@ -1,7 +1,9 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
 
-// #define DEBUG 1
+#include <fdk-aac/aacenc_lib.h>
+#include <fdk-aac/aacdecoder_lib.h>
+
 #define ALIGNED_ALLOC(n, size) aligned_alloc(n, (size + n - 1) / n * n)
 #define TIMESCALE 90000
 
@@ -56,6 +58,28 @@ static void _write_nal (MP4Muxer *muxer, const uint8_t *data, size_t size)
   mp4_h26x_write_nal(&muxer->writer, data, size, TIMESCALE/(muxer->fps));
 }
 
+static void encode_callback (const uint8_t *nalu_data, int sizeof_nalu_data, void *token)
+{
+  // token(nalu_data, sizeof_nalu_data)
+  val write_fn = *(val *)token;
+  // (*write_fn)(
+  //     val((uintptr_t)nalu_data),
+  //     val((uint32_t)sizeof_nalu_data)
+  //   ).as<int>();
+
+  std::function<int(const void *buffer, size_t size, int64_t offset)> callback;
+  callback = [write_fn](const void *buffer, uint32_t size, uint32_t offset) -> int {
+    uint8_t *data = (uint8_t*)(buffer);
+    return write_fn(
+      val((uintptr_t)data),
+      val((uint32_t)size),
+      val((uint32_t)offset)
+    ).as<int>();
+  };
+
+  callback(nalu_data, sizeof_nalu_data, 0);
+}
+
 static void nalu_callback (const uint8_t *nalu_data, int sizeof_nalu_data, void *token)
 {
   MP4Muxer *muxer = (MP4Muxer *)token;
@@ -86,6 +110,51 @@ void mux_nal (uint32_t muxer_handle, uintptr_t nalu_ptr, int nalu_size)
   MP4Muxer* muxer = mapMuxer[muxer_handle];
   uint8_t* data = reinterpret_cast<uint8_t*>(nalu_ptr);
   _write_nal(muxer, data, nalu_size);
+}
+
+void mux_acc (uint32_t muxer_handle, uintptr_t acc_ptr, int acc_size)
+{
+  MP4Muxer* muxer = mapMuxer[muxer_handle];
+  uint8_t* data = reinterpret_cast<uint8_t*>(acc_ptr);
+  size_t size = acc_size;
+
+  // MP4E_put_sample(muxer->mux, audio_track_id, buf, out_args.numOutBytes, 1024*90000/AUDIO_RATE, MP4E_SAMPLE_RANDOM_ACCESS);
+  // mp4_h26x_write_nal(&muxer->writer, data, size, TIMESCALE/(muxer->fps));
+}
+
+uint32_t add_audio_track (uint32_t encoder_handle, uint32_t channels) 
+{
+  Encoder* encoder = mapEncoder[encoder_handle];
+  MP4Muxer* muxer = mapMuxer[encoder->muxer_handle];
+
+  HANDLE_AACENCODER aacenc;
+  AACENC_InfoStruct info;
+  aacEncOpen(&aacenc, 0, 0);
+  aacEncoder_SetParam(aacenc, AACENC_TRANSMUX, 0);
+  aacEncoder_SetParam(aacenc, AACENC_AFTERBURNER, 1);
+  aacEncoder_SetParam(aacenc, AACENC_BITRATEMODE, 3); // 3-vbr medium, 4-vbr high, 5-vbr very high
+  aacEncoder_SetParam(aacenc, AACENC_SAMPLERATE, 44100);
+  aacEncoder_SetParam(aacenc, AACENC_CHANNELMODE, channels);
+  aacEncEncode(aacenc, NULL, NULL, NULL, NULL);
+  aacEncInfo(aacenc, &info);
+
+  printf("add_audio_track ---\n");
+  printf("confSize=%d\n", info.confSize);
+  printf("confBuf=%d\n", info.confBuf);
+
+  MP4E_track_t tr;
+  tr.track_media_kind = e_audio;
+  tr.language[0] = 'u';
+  tr.language[1] = 'n';
+  tr.language[2] = 'd';
+  tr.language[3] = 0;
+  tr.object_type_indication = MP4_OBJECT_TYPE_AUDIO_ISO_IEC_14496_3;
+  tr.time_scale = TIMESCALE;
+  tr.default_duration = 0;
+  tr.u.a.channelcount = channels;
+  uint32_t audio_track_id = MP4E_add_track(muxer->mux, &tr);
+  MP4E_set_dsi(muxer->mux, audio_track_id, info.confBuf, info.confSize);
+  return audio_track_id;
 }
 
 bool option_exists (val options, std::string key)
@@ -149,6 +218,7 @@ uint32_t create_encoder(val options, val write_fn)
   int vbvSize = options["vbvSize"].isNumber() ? options["vbvSize"].as<int>() : -1;
   int temporalDenoise = options["temporalDenoise"].isTrue() ? 1 : 0;
   bool rgbFlipY = options["rgbFlipY"].isTrue() ? true : false;
+  bool noMux = options["noMux"].isTrue() ? true : false;
   uint32_t default_kbps = kbps ? kbps : 5000;
   // printf("isNum %d\n", options["foobar"].isNumber());
 
@@ -170,6 +240,8 @@ uint32_t create_encoder(val options, val write_fn)
   printf("quantizationParameter=%d\n", quantizationParameter);
   printf("groupOfPictures=%d\n", groupOfPictures);
   printf("desiredNaluBytes=%d\n", desiredNaluBytes);
+  printf("fragmentation=%d\n", fragmentation);
+  printf("sequential=%d\n", sequential);
   printf("temporalDenoise=%d\n", temporalDenoise);
   printf("\n");
   #endif
@@ -233,8 +305,20 @@ uint32_t create_encoder(val options, val write_fn)
     encoder->run_param.qp_min = encoder->run_param.qp_max = quantizationParameter;
   }
 
-  encoder->run_param.nalu_callback_token = muxer;
-  encoder->run_param.nalu_callback = &nalu_callback;
+  if (noMux) // bypass muxing
+  {
+    encoder->run_param.nalu_callback_token = &write_fn;
+    encoder->run_param.nalu_callback = &encode_callback;
+
+    // free useless muxer
+    free(muxer);
+    mapMuxer.erase(muxer_handle);
+  }
+  else 
+  {
+    encoder->run_param.nalu_callback_token = muxer;
+    encoder->run_param.nalu_callback = &nalu_callback;
+  }
 
   // memset(&encoder->yuv_planes, 0, sizeof(encoder->yuv_planes));
   encoder->yuv_planes.stride[0] = width;
@@ -313,6 +397,11 @@ void encode_rgb (uint32_t encoder_handle, uintptr_t rgb_buffer_ptr, size_t strid
   encode_yuv(encoder_handle, yuv_buffer_ptr);
 }
 
+void encode_pcm (uint32_t encoder_handle, uintptr_t rgb_buffer_ptr, size_t stride, uintptr_t yuv_buffer_ptr)
+{
+
+}
+
 void finalize_muxer (uint32_t muxer_handle)
 {
   MP4Muxer *muxer = mapMuxer[muxer_handle];
@@ -347,4 +436,8 @@ EMSCRIPTEN_BINDINGS(H264MP4EncoderBinding) {
   function("mux_nal", &mux_nal);
   function("finalize_encoder", &finalize_encoder);
   function("finalize_muxer", &finalize_muxer);
+  // for audio
+  function("encode_pcm", &encode_pcm);
+  function("mux_acc", &mux_acc);
+  function("add_audio_track", &add_audio_track);
 }

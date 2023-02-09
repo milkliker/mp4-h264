@@ -1,5 +1,7 @@
-EMSDK="/projects/code/emsdk"
-# EMSDK_NODE_BIN="$EMSDK/node/12.18.1_64bit/bin"
+# EMSDK="/projects/code/emsdk"
+EMSDK="/Users/ZhaoJun/Desktop/emsdk"
+
+# EMSDK_NODE_BIN="$EMSDK/node/14.18.2_64bit/bin"
 EMSCRIPTEN="$EMSDK/upstream/emscripten"
 PATH="$EMSDK:$EMSCRIPTEN:$EMSDK_NODE_BIN:${PATH}"
 EM_CONFIG="$EMSDK/.emscripten"
@@ -25,9 +27,9 @@ cp mp4-encoder.js ../../../build/mp4-encoder.js
 cp mp4-encoder.wasm ../../../build/mp4-encoder.wasm
 cp mp4-encoder.simd.wasm ../../../build/mp4-encoder.simd.wasm
 
-cmake -DUSE_SIMD=OFF -DWEB=OFF -DCMAKE_TOOLCHAIN_FILE=$EMSCRIPTEN/cmake/Modules/Platform/Emscripten.cmake ..
-cmake --build .
-cp mp4-encoder.node.js ../../../build/mp4-encoder.node.js
-cp mp4-encoder.node.wasm ../../../build/mp4-encoder.node.wasm
+# cmake -DUSE_SIMD=OFF -DWEB=OFF -DCMAKE_TOOLCHAIN_FILE=$EMSCRIPTEN/cmake/Modules/Platform/Emscripten.cmake ..
+# cmake --build .
+# cp mp4-encoder.node.js ../../../build/mp4-encoder.node.js
+# cp mp4-encoder.node.wasm ../../../build/mp4-encoder.node.wasm
 
 

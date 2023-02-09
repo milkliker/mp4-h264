@@ -13,7 +13,12 @@ add_executable(mp4-encoder
 target_include_directories(mp4-encoder PRIVATE
   "minimp4"
   "minih264"
+  # "/usr/local/include/"
 )
+
+# target_link_libraries(mp4-encoder PRIVATE
+#   "/usr/local/lib/libfdk-aac.a"
+# )
 
 if(EMSCRIPTEN)
     set(CMAKE_CXX_FLAGS "\
@@ -28,9 +33,10 @@ if(EMSCRIPTEN)
         -s ASSERTIONS=0\
         -Wno-invalid-source-encoding\
         -Wno-tautological-pointer-compare\
-        --pre-js ../api.js\
+        --pre-js ../pre.js\
+        --extern-post-js ../extern-post.js\
         -O3\
-        --closure 1\
+        --closure 0\
         -g0\
         --bind\
     ")
