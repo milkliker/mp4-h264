@@ -114,6 +114,7 @@ Module['createSoftEncoder'] = function createSoftEncoder(settings = {}) {
       const yuv = getYUV();
       Module['HEAPU8'].set(buffer, rgb);
       Module['encode_rgb'](encoder_pointer, rgb, stride, yuv);
+      return { res: true };
     },
     'encodeYUV': function (buffer) {
       if (buffer.length !== (width * height * 3) / 2) {

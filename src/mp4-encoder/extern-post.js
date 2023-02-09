@@ -83,6 +83,7 @@ export function createWebCodecsEncoderWithModule(MP4, opts = {}) {
         await encoder.flush();
       }
       frameIndex++;
+      return { res: true };
     },
   };
 
