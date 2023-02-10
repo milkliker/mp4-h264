@@ -144,11 +144,11 @@ Module['locateFile'] = function locateFileDefault (path, dir) {
   }
 };
 
-Module['createHardEncoder'] = function createHardEncoder(opts) {
-  return createWebCodecsEncoderWithModule(Module, opts);
+Module['createHardEncoder'] = async function createHardEncoder(opts) {
+  return await createWebCodecsEncoderWithModule(Module, opts);
 }
 
-Module['create'] = function createEncoder (opts) {
+Module['create'] = async function createEncoder (opts) {
   if (opts.preferSoftEncoder) return Module['createSoftEncoder'](opts);
-  return Module['createHardEncoder'](opts) || Module['createSoftEncoder'](opts);
+  return (await Module['createHardEncoder'](opts)) || Module['createSoftEncoder'](opts);
 }

@@ -5,7 +5,7 @@ function defaultError(error) {
   console.error(error);
 }
 
-export function createWebCodecsEncoderWithModule(MP4, opts = {}) {
+export async function createWebCodecsEncoderWithModule(MP4, opts = {}) {
   const {
     width, height, fps = 30,
     groupOfPictures = 20,
@@ -43,7 +43,12 @@ export function createWebCodecsEncoderWithModule(MP4, opts = {}) {
     ...encoderOptions,
   };
 
-  if (typeof VideoEncoder !== "function" || !VideoEncoder.isConfigSupported(config)) {
+  try {
+    if (typeof VideoEncoder !== "function") return false;
+    const support = await VideoEncoder.isConfigSupported(config);
+    if (!support.supported) return false;
+  } catch (e) {
+    console.error(e);
     return false;
   }
 
